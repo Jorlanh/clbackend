@@ -4,16 +4,14 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 @Data
-@AllArgsConstructor
+@AllArgsConstructor // Cria o construtor com todos os argumentos automaticamente
 public class LoginResponse {
-    private String token; // O Frontend precisa disso para o Header
+    private String token;
     private Long id;
     private String name;
     private String email;
     private String role;
     private int credits;
-    
-    // Stats simples
     private int totalSearches;
     private int totalRecordsExtracted;
 }
