@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/auth") // CORREÇÃO: Adicionado /api para bater com o SecurityConfig
 public class AuthController {
 
     @Autowired
@@ -17,7 +17,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
-        // Chama o método login do seu Service passando email e senha
+        // Agora acessível via POST http://localhost:8080/api/auth/login
         LoginResponse response = authService.login(request.getEmail(), request.getPassword());
         return ResponseEntity.ok(response);
     }
