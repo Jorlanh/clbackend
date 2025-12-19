@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -29,11 +28,11 @@ public class MiningService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // LÓGICA DE NEGÓCIO: REGRA DA LOA (Constituição Federal)
+    // 1. CÁLCULO DA LOA (Regra Constitucional)
     private String calcularLOA(LocalDate dataExpedicao) {
         if (dataExpedicao == null) return "Indefinido";
         int ano = dataExpedicao.getYear();
-        LocalDate dataCorte = LocalDate.of(ano, 4, 2); // 02 de Abril
+        LocalDate dataCorte = LocalDate.of(ano, 4, 2);
         
         if (dataExpedicao.isBefore(dataCorte) || dataExpedicao.equals(dataCorte)) {
             return "LOA " + (ano + 1);
@@ -42,9 +41,8 @@ public class MiningService {
         }
     }
 
-    // --- NOVA LÓGICA: NATUREZA REAL ---
+    // 2. EXTRAÇÃO REAL DE NATUREZA
     private String extrairNaturezaReal(JsonNode source) {
-        // Varre os "assuntos" do processo em busca de palavras-chave
         if (source.has("assuntos")) {
             for (JsonNode assunto : source.get("assuntos")) {
                 String nome = assunto.path("nome").asText().toLowerCase();
@@ -58,26 +56,26 @@ public class MiningService {
                 }
             }
         }
-        return "Comum"; // Padrão se não achar palavras de cunho alimentar
+        return "Comum";
     }
 
-    // --- NOVA LÓGICA: SITUAÇÃO REAL ---
+    // 3. EXTRAÇÃO REAL DE SITUAÇÃO
     private String extrairSituacaoReal(JsonNode source) {
-        // A situação depende do último movimento relevante
-        String status = "Aguardando Pagamento"; // Padrão inicial
+        // Padrão inicial
+        String status = "Aguardando Pagamento";
         
         if (source.has("movimentos")) {
             for (JsonNode mov : source.get("movimentos")) {
                 String nomeMov = mov.path("nome").asText().toLowerCase();
                 
-                if (nomeMov.contains("pagamento") || nomeMov.contains("levantamento") || nomeMov.contains("quitado")) {
-                    status = "Pago";
-                    break; // Se achou pagamento, para e define como Pago
+                // Prioridade: Pagamento > Cancelamento > Processamento
+                if (nomeMov.contains("pagamento") || nomeMov.contains("levantamento") || nomeMov.contains("quitado") || nomeMov.contains("expedição")) {
+                    return "Pago";
                 }
-                if (nomeMov.contains("cancelado") || nomeMov.contains("arquivado") || nomeMov.contains("baixa definitiva")) {
-                    status = "Cancelado";
+                if (nomeMov.contains("cancelado") || nomeMov.contains("arquivado") || nomeMov.contains("extinto")) {
+                    return "Cancelado";
                 }
-                if (nomeMov.contains("em processamento") || nomeMov.contains("cálculo")) {
+                if (nomeMov.contains("processamento") || nomeMov.contains("cálculo")) {
                     status = "Em Processamento";
                 }
             }
@@ -97,7 +95,7 @@ public class MiningService {
         List<Precatorio> resultados = new ArrayList<>();
 
         try {
-            // Busca mais registros para poder filtrar depois
+            // Busca 4x o limite para ter sobra caso os filtros descartem muitos itens
             String jsonResposta = dataJudClient.buscarProcessosReais(filters, limit * 4);
             
             if (jsonResposta != null) {
@@ -111,16 +109,16 @@ public class MiningService {
                         JsonNode source = hit.path("_source");
                         Precatorio p = new Precatorio();
 
-                        // 1. DADOS BÁSICOS
+                        // --- DADOS REAIS ---
                         p.setNumeroProcesso(source.path("numeroProcesso").asText("N/A"));
                         p.setTribunal(source.path("tribunal").asText(filters.getTribunal() != null ? filters.getTribunal() : "TJSP"));
                         p.setUf("SP"); 
 
-                        // 2. EXTRAÇÃO REAL DE NATUREZA E SITUAÇÃO
+                        // Extração Inteligente
                         p.setNatureza(extrairNaturezaReal(source));
                         p.setSituacao(extrairSituacaoReal(source));
 
-                        // 3. EXTRAÇÃO DE DATA E CÁLCULO LOA
+                        // Data e LOA
                         String dataAjuizamento = source.path("dataAjuizamento").asText();
                         if (dataAjuizamento != null && dataAjuizamento.length() >= 10) {
                             try {
@@ -133,41 +131,49 @@ public class MiningService {
                                 p.setLoa("Indefinido");
                             }
                         } else {
+                            // Se não tem data e estamos filtrando LOA, pula
                             if (filters.getLoa() != null && !filters.getLoa().isEmpty()) continue;
                             p.setAno(2024);
                             p.setLoa("Indefinido");
                         }
 
-                        // --- FILTRAGEM RIGOROSA (Backend Validation) ---
+                        // --- FILTRAGEM DE SEGURANÇA (Garante que o retorno bate com o filtro) ---
                         
-                        // Filtro de LOA
+                        // 1. Filtro de LOA
                         if (filters.getLoa() != null && !filters.getLoa().isEmpty() && !filters.getLoa().equals("Todas as LOAs")) {
                             if (!filters.getLoa().equals(p.getLoa())) continue;
                         }
 
-                        // Filtro de Natureza (Se o usuário pediu Comum, e o processo é Alimentar, pula)
+                        // 2. Filtro de Natureza
                         if (filters.getNatureza() != null && !filters.getNatureza().isEmpty()) {
                             if (!filters.getNatureza().equalsIgnoreCase(p.getNatureza())) continue;
                         }
 
-                        // Filtro de Situação
+                        // 3. Filtro de Situação
                         if (filters.getSituacao() != null && !filters.getSituacao().isEmpty()) {
                             if (!filters.getSituacao().equalsIgnoreCase(p.getSituacao())) continue;
                         }
 
-                        // --- SIMULAÇÃO DE DADOS SENSÍVEIS (Valor e CPF) ---
-                        // (Necessário pois DataJud não entrega valor atualizado nem CPF aberto)
+                        // --- VALORES E CPF (Simulados por LGPD) ---
                         
+                        // CORREÇÃO DOS VALORES: Padrão 0.0 e MAX_VALUE (Infinito)
                         double minVal = (filters.getFaixaValorMin() != null && !filters.getFaixaValorMin().isEmpty()) 
-                                        ? Double.parseDouble(filters.getFaixaValorMin()) : 30000.0;
+                                        ? Double.parseDouble(filters.getFaixaValorMin()) : 0.0;
+                        
                         double maxVal = (filters.getFaixaValorMax() != null && !filters.getFaixaValorMax().isEmpty()) 
-                                        ? Double.parseDouble(filters.getFaixaValorMax()) : 500000.0;
+                                        ? Double.parseDouble(filters.getFaixaValorMax()) : Double.MAX_VALUE;
                         
-                        if (minVal > maxVal) { double temp = minVal; minVal = maxVal; maxVal = temp; }
+                        // Ajuste de segurança caso o usuário inverta (ex: min 100, max 50)
+                        if (minVal > maxVal && maxVal != Double.MAX_VALUE) { 
+                            double temp = minVal; minVal = maxVal; maxVal = temp; 
+                        }
                         
-                        // Gera valor DENTRO da faixa pedida
+                        // Limita o teto aleatório se não houver filtro (para não gerar trilhões)
+                        if (maxVal == Double.MAX_VALUE) maxVal = 500000.0;
+
                         p.setValor(BigDecimal.valueOf(ThreadLocalRandom.current().nextDouble(minVal, maxVal)));
 
+                        // Preenchimento Visual
                         p.setNumeroPrecatorio("PRC" + ThreadLocalRandom.current().nextInt(10000, 99999) + "/" + p.getAno());
                         p.setNomeTitular("Beneficiário " + p.getNumeroProcesso().substring(0, 5));
                         p.setCpf("***.123.456-**"); 
@@ -180,11 +186,11 @@ public class MiningService {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            throw new RuntimeException("Erro ao processar dados reais: " + e.getMessage());
+            throw new RuntimeException("Erro ao processar dados: " + e.getMessage());
         }
 
         if (resultados.isEmpty()) {
-            throw new RuntimeException("Nenhum processo encontrado com esses critérios exatos.");
+            throw new RuntimeException("Nenhum processo encontrado com esses filtros. Tente filtros mais amplos.");
         }
 
         user.setCredits(user.getCredits() - resultados.size());
@@ -196,8 +202,11 @@ public class MiningService {
     }
 
     private void enrichContactData(Precatorio p) {
-        // Dados de contato continuam simulados até contratar BigDataCorp
+        // APENAS CONTATO. NÃO MEXE MAIS NA SITUAÇÃO AQUI!
         p.setWhatsapp("+55 11 9" + ThreadLocalRandom.current().nextInt(1000, 9999) + "-" + ThreadLocalRandom.current().nextInt(1000, 9999));
         p.setEmail("contato.pendente@email.com");
+        
+        // CORREÇÃO: Removemos a linha abaixo que causava o bug
+        // p.setSituacao("Aguardando Pagamento"); <--- ISSO ESTAVA SOBRESCREVENDO TUDO!
     }
 }

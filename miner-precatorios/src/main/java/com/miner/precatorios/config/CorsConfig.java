@@ -9,10 +9,10 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                // ADICIONEI A PORTA 5173 (Vite) E 3000 (React Padrão)
-                .allowedOrigins("http://localhost:5173", "http://localhost:3000")
+                // ADICIONEI A PORTA 5173 (Vite) AQUI
+                .allowedOrigins("http://localhost:5173", "http://localhost:3000", "http://localhost:8080")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*") // IMPORTANTE: Permite enviar o Token no Header
+                .allowedHeaders("*")
                 .allowCredentials(true);
     }
 }

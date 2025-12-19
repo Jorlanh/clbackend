@@ -27,10 +27,13 @@ public class DataJudClient {
         HttpEntity<String> entity = new HttpEntity<>(queryJson, headers);
 
         try {
-            // Ajusta URL se for TRF (Exemplo simples)
+            // Ajusta URL se for TRF ou outro tribunal
             String url = URL_BASE; 
-            if (filters.getTribunal() != null && filters.getTribunal().toLowerCase().contains("trf")) {
-                url = "https://api-publica.datajud.cnj.jus.br/api_publica_trf1/_search";
+            if (filters.getTribunal() != null && !filters.getTribunal().isEmpty()) {
+                if (filters.getTribunal().toLowerCase().contains("trf")) {
+                    url = "https://api-publica.datajud.cnj.jus.br/api_publica_trf1/_search";
+                } 
+                // Adicione outros mapeamentos de URL conforme necessário
             }
 
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
@@ -43,25 +46,51 @@ public class DataJudClient {
     }
 
     private String montarQueryElasticsearch(FilterRequest filters, int limit) {
-        // Início da query bool
         StringBuilder sb = new StringBuilder();
         sb.append("{ \"query\": { \"bool\": { \"must\": [");
 
-        // 1. Filtro de Tribunal (se houver, embora a URL já segmente)
-        // sb.append("{ \"match\": { \"tribunal\": \"" + filters.getTribunal() + "\" } }");
-
-        // 2. Filtro de ANO (A Mágica acontece aqui)
-        // O campo dataAjuizamento no DataJud é ISO (ex: 2023-05-12T10:00:00)
+        // 1. Filtro de ANO (Range de Datas)
         if (filters.getAno() != null && !filters.getAno().isEmpty()) {
             String ano = filters.getAno();
-            // Adiciona vírgula se já tiver itens no array (aqui é o primeiro, então não precisa)
             sb.append(String.format(
-                "{ \"range\": { \"dataAjuizamento\": { \"gte\": \"%s-01-01\", \"lte\": \"%s-12-31\" } } }", 
+                "{ \"range\": { \"dataAjuizamento\": { \"gte\": \"%s-01-01\", \"lte\": \"%s-12-31\" } } },", 
                 ano, ano
             ));
+        }
+
+        // 2. Filtro de NATUREZA (Busca nos Assuntos)
+        if (filters.getNatureza() != null && !filters.getNatureza().isEmpty()) {
+            if (filters.getNatureza().equalsIgnoreCase("Alimentar")) {
+                // Busca palavras-chave de natureza alimentar
+                sb.append("{ \"query_string\": { \"default_field\": \"assuntos.nome\", \"query\": \"*alimentos* OR *salário* OR *previdenciário* OR *indenização*\" } },");
+            } else if (filters.getNatureza().equalsIgnoreCase("Comum")) {
+                // Tenta excluir termos alimentares (busca simples)
+                sb.append("{ \"query_string\": { \"default_field\": \"assuntos.nome\", \"query\": \"*tributário* OR *execução* OR *cobrança*\" } },");
+            }
+        }
+
+        // 3. Filtro de SITUAÇÃO (Busca nos Movimentos)
+        if (filters.getSituacao() != null && !filters.getSituacao().isEmpty()) {
+            if (filters.getSituacao().equalsIgnoreCase("Pago")) {
+                sb.append("{ \"query_string\": { \"default_field\": \"movimentos.nome\", \"query\": \"*pagamento* OR *expedição* OR *levantamento*\" } },");
+            } else if (filters.getSituacao().equalsIgnoreCase("Cancelado")) {
+                sb.append("{ \"query_string\": { \"default_field\": \"movimentos.nome\", \"query\": \"*cancelado* OR *arquivado*\" } },");
+            }
+            // "Aguardando Pagamento" é o default, então não filtramos para trazer o resto
+        }
+
+        // Remove a última vírgula se houver
+        if (sb.toString().endsWith(",")) {
+            sb.setLength(sb.length() - 1);
         } else {
-            // Se não tem filtro, busca tudo (match_all é default quando must está vazio, mas vamos garantir algo)
-            sb.append("{ \"match_all\": {} }");
+            // Se não tiver nenhum filtro específico, garante que traga algo
+            if (!sb.toString().contains("{")) { 
+                 sb.append("{ \"match_all\": {} }");
+            } else {
+                 // Caso tenha entrado nos ifs mas sem vírgula (raro), match_all garante sintaxe
+                 // Melhor abordagem: se a string terminar em '[', adiciona match_all
+                 if (sb.toString().endsWith("[")) sb.append("{ \"match_all\": {} }");
+            }
         }
 
         sb.append("] } }, \"size\": " + limit + " }");
