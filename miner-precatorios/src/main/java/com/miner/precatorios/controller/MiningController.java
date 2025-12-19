@@ -1,11 +1,12 @@
 package com.miner.precatorios.controller;
 
 import com.miner.precatorios.dto.FilterRequest;
-import com.miner.precatorios.service.MiningService;
-import com.miner.precatorios.repository.UserRepository;
 import com.miner.precatorios.model.User;
+import com.miner.precatorios.repository.UserRepository;
+import com.miner.precatorios.service.MiningService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -20,22 +21,17 @@ public class MiningController {
 
     @PostMapping("/search")
     public ResponseEntity<?> search(@RequestBody FilterRequest filters, 
-                                    @RequestParam int limit,
-                                    @RequestHeader(value = "User-Email", required = false) String userEmail) {
+                                    @RequestParam int limit) {
         try {
-            // Em produção real, pegamos o ID do token JWT.
-            // Para seu MVP funcionar fácil, vamos pegar o ID pelo email passado no Header ou usar um padrão.
+            // Pega o email de quem está logado automaticamente pelo Token
+            String email = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
             
-            Long userId = 1L; // Padrão
-            
-            if(userEmail != null) {
-                User user = userRepository.findByEmail(userEmail).orElse(null);
-                if(user != null) userId = user.getId();
-            }
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Usuário não encontrado no banco"));
 
-            return ResponseEntity.ok(service.realizarMineracao(filters, limit, userId));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.ok(service.realizarMineracao(filters, limit, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.status(403).body("Erro: " + e.getMessage());
         }
     }
 }

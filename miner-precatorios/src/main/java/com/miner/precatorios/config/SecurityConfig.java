@@ -1,5 +1,6 @@
 package com.miner.precatorios.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -17,24 +18,27 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 public class SecurityConfig {
 
+    @Autowired
+    private SecurityFilter securityFilter; // Injeta o filtro que criamos
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .csrf(csrf -> csrf.disable()) // Desabilita CSRF pois é API REST
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Sem sessão no servidor (JWT)
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll() // Login e Registro liberados
-                        .requestMatchers(HttpMethod.POST, "/api/payment/webhook").permitAll() // Webhook de pagamento liberado (validaremos o segredo no código)
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Permite CORS do React
-                        .anyRequest().authenticated() // TUDO o resto exige Token
+                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll() // Login/Registro liberados
+                        .requestMatchers(HttpMethod.POST, "/api/payment/webhook").permitAll() // Webhook liberado
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Frontend CORS liberado
+                        .anyRequest().authenticated() // RESTO BLOQUEADO
                 )
-                // Adicionaremos o filtro de Token aqui depois (ver abaixo)
+                .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class) // Adiciona o filtro
                 .build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(); // Criptografia de ponta para senhas
+        return new BCryptPasswordEncoder();
     }
 
     @Bean
