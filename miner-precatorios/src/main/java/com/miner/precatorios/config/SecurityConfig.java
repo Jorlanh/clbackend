@@ -19,20 +19,21 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     @Autowired
-    private SecurityFilter securityFilter; // Injeta o filtro que criamos
+    private SecurityFilter securityFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> {}) // <--- ESSA LINHA É CRÍTICA! Ativa a configuração do CorsConfig
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll() // Login/Registro liberados
-                        .requestMatchers(HttpMethod.POST, "/api/payment/webhook").permitAll() // Webhook liberado
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Frontend CORS liberado
-                        .anyRequest().authenticated() // RESTO BLOQUEADO
+                        .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/payment/webhook").permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Garante que o navegador possa perguntar "posso entrar?"
+                        .anyRequest().authenticated()
                 )
-                .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class) // Adiciona o filtro
+                .addFilterBefore(securityFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
