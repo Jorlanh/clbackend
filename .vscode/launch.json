@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-MinerPrecatoriosApplication<miner-precatorios>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.miner.precatorios.MinerPrecatoriosApplication",
+            "projectName": "miner-precatorios",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
